@@ -37,6 +37,12 @@ This project provides a complete solution for deepfake detection through:
 - ✅ **High Accuracy**: State-of-the-art models trained on FaceForensics++ dataset
 - ✅ **GPU Support**: Automatic CUDA acceleration for faster inference
 
+> ⚠️ **Current build status (Phase 2 — honest snapshot)**
+> - This Windows build runs **CPU-only**; there is no GPU/CUDA path in use.
+> - The active detector is the **ResNet18** checkpoint in `models/video.pth`, applied to single RGB images. The Keras `image.h5` (Xception) is **not used** here because TensorFlow's DLLs are blocked by Application Control on this laptop — see the note in `src/detector.py`.
+> - The app is **image-only** at this stage. Video and the Xception image model described in older sections below are from the *original repository* and are **not** part of the current runnable build.
+> - **Phase 2 adds an FFT magnitude-spectrum view** (see *Frequency Analysis* below). It is **visualization only** — the ResNet18 classifier does **not** use frequency features for its decision.
+
 ## 📁 Project Structure
 
 ```
@@ -338,6 +344,38 @@ The Streamlit app (`app.py`) provides an intuitive web interface for deepfake de
 - **Processing Speed**: 
   - Images: ~0.5 seconds per image
   - Videos: ~100-200 frames per second (GPU)
+
+---
+
+## 🔍 Frequency Analysis (FFT)
+
+Phase 2 adds a reusable frequency-analysis module: `src/frequency.py`.
+
+### What it does
+1. Convert the image to **grayscale**.
+2. Compute the **2D Fast Fourier Transform** (`np.fft.fft2`).
+3. Centre the spectrum with `np.fft.fftshift` so low frequencies sit in the middle.
+4. Take the **logarithm** of the magnitude (`log1p`) so faint high-frequency detail becomes visible.
+5. **Normalise** to 0–255 for display.
+
+### What it does NOT do
+It does **not** feed frequency features into the deepfake classifier. Showing an FFT spectrum and *classifying with* frequency features are different things. Until an actual frequency-aware classifier is built and verified (a possible Phase 5 extension), the detector stays an honest RGB-only ResNet18, and the FFT panel is for human inspection.
+
+### FFT in simple terms
+A normal image is described by how bright each pixel is (the *spatial* view). The Fourier transform re-describes the same image by the **frequencies** it contains: smooth, slow changes are *low frequency* (centre of the spectrum); sharp edges, fine textures and compression artefacts are *high frequency* (edges of the spectrum). Deepfakes often smooth or blur faces, which removes high frequencies, so their spectrum can look "cleaner" than a real photo's. The spectrum helps a human understand what the model *might* be reacting to — but it is not the model's input.
+
+### Module API
+- `to_grayscale(image)` → 2D uint8
+- `compute_magnitude_spectrum(gray)` → centred log-magnitude (float32)
+- `normalize_for_display(spectrum)` → 0–255 uint8
+- `analyze_image(rgb)` / `analyze_image_file(path)` → full pipeline (raises `FrequencyError` on bad input)
+- `make_spectrum_figure(rgb, analysis)` → 3-panel matplotlib figure for the app
+
+### Tests
+```
+.venv\Scripts\python.exe -m pytest test\test_frequency.py -v
+```
+Covers valid inputs (shapes, dtypes, DC-centering, constant-image behaviour) and invalid inputs (`None`, wrong type, wrong shape, empty array, missing file, corrupt `assets/corrupt.png`).
 
 ---
 
